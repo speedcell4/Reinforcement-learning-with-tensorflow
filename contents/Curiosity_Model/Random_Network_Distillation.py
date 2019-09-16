@@ -1,9 +1,9 @@
 """This is a simple implementation of [Exploration by Random Network Distillation](https://arxiv.org/abs/1810.12894)"""
 
-import numpy as np
-import tensorflow as tf
 import gym
 import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
 
 
 class CuriosityNet:
@@ -27,7 +27,7 @@ class CuriosityNet:
         self.replace_target_iter = replace_target_iter
         self.memory_size = memory_size
         self.batch_size = batch_size
-        self.s_encode_size = 1000       # give a hard job for predictor to learn
+        self.s_encode_size = 1000  # give a hard job for predictor to learn
 
         # total learning step
         self.learn_step_counter = 0
@@ -52,9 +52,9 @@ class CuriosityNet:
         self.sess.run(tf.global_variables_initializer())
 
     def _build_nets(self):
-        tfs = tf.placeholder(tf.float32, [None, self.n_s], name="s")    # input State
-        tfa = tf.placeholder(tf.int32, [None, ], name="a")              # input Action
-        tfr = tf.placeholder(tf.float32, [None, ], name="ext_r")        # extrinsic reward
+        tfs = tf.placeholder(tf.float32, [None, self.n_s], name="s")  # input State
+        tfa = tf.placeholder(tf.int32, [None, ], name="a")  # input Action
+        tfr = tf.placeholder(tf.float32, [None, ], name="ext_r")  # extrinsic reward
         tfs_ = tf.placeholder(tf.float32, [None, self.n_s], name="s_")  # input Next State
 
         # fixed random net
@@ -95,12 +95,12 @@ class CuriosityNet:
             a_indices = tf.stack([tf.range(tf.shape(a)[0], dtype=tf.int32), a], axis=1)
             q_wrt_a = tf.gather_nd(params=q, indices=a_indices)
 
-        loss = tf.losses.mean_squared_error(labels=q_target, predictions=q_wrt_a)   # TD error
+        loss = tf.losses.mean_squared_error(labels=q_target, predictions=q_wrt_a)  # TD error
         train_op = tf.train.RMSPropOptimizer(self.lr, name="dqn_opt").minimize(
             loss, var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "eval_net"))
         return q, loss, train_op
 
-    def store_transition(self, s, a, r, s_):            
+    def store_transition(self, s, a, r, s_):
         transition = np.hstack((s, [a, r], s_))
         # replace the old memory with new memory
         index = self.memory_counter % self.memory_size
@@ -130,9 +130,9 @@ class CuriosityNet:
         batch_memory = self.memory[sample_index, :]
 
         bs, ba, br, bs_ = batch_memory[:, :self.n_s], batch_memory[:, self.n_s], \
-            batch_memory[:, self.n_s + 1], batch_memory[:, -self.n_s:]
+                          batch_memory[:, self.n_s + 1], batch_memory[:, -self.n_s:]
         self.sess.run(self.dqn_train, feed_dict={self.tfs: bs, self.tfa: ba, self.tfr: br, self.tfs_: bs_})
-        if self.learn_step_counter % 100 == 0:     # delay training in order to stay curious
+        if self.learn_step_counter % 100 == 0:  # delay training in order to stay curious
             self.sess.run(self.pred_train, feed_dict={self.tfs_: bs_})
         self.learn_step_counter += 1
 
@@ -142,21 +142,38 @@ env = env.unwrapped
 
 dqn = CuriosityNet(n_a=3, n_s=2, lr=0.01, output_graph=False)
 ep_steps = []
-for epi in range(200):
+for epi in range(20):
     s = env.reset()
     steps = 0
+    acc_r = 0
     while True:
-        # env.render()
         a = dqn.choose_action(s)
         s_, r, done, info = env.step(a)
+        acc_r += r
         dqn.store_transition(s, a, r, s_)
         dqn.learn()
         if done:
-            print('Epi: ', epi, "| steps: ", steps)
+            print(f'Epi: {epi} | steps: {steps} | reward: {acc_r}')
             ep_steps.append(steps)
             break
         s = s_
         steps += 1
+
+s = env.reset()
+# steps = 0
+dqn.epsilon = 1.0
+acc_r = 0
+while True:
+    env.render()
+    a = dqn.choose_action(s)
+    s_, r, done, info = env.step(a)
+    acc_r += r
+    dqn.store_transition(s, a, r, s_)
+    dqn.learn()
+    if done:
+        print(f'test | reward: {acc_r}')
+        break
+    s = s_
 
 plt.plot(ep_steps)
 plt.ylabel("steps")
